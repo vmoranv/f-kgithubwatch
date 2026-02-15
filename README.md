@@ -24,6 +24,17 @@ Important:
 
 - The repository subscription endpoint does **not** work with GitHub App tokens and fine-grained PATs.
 - In GitHub Actions, default `GITHUB_TOKEN` is a GitHub App token, so use `WATCH_PAT`.
+- If you see `Validation Failed (HTTP 422)` when setting subscription, `WATCH_PAT` is usually not a classic PAT (or lacks needed repo scope).
+
+### `WATCH_PAT` scope checklist (classic PAT)
+
+Use **Personal access token (classic)**, then select scopes as follows:
+
+- Private repos involved: check `repo`.
+- Public repos only: check `public_repo` (you can skip `repo`).
+- Do **not** need for this project: `workflow`, `admin:org`, `repo_hook`, `notifications`, `gist`.
+
+If your org uses SSO, also authorize this PAT for that org after creation.
 
 ## Local mode: create and watch immediately
 

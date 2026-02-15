@@ -123,13 +123,24 @@ if (-not $isReady) {
 
 Write-Host "[new-repo-watch] Enabling Watch subscription..."
 
-gh api -X PUT "repos/$fullName/subscription" `
-  -H "Accept: application/vnd.github+json" `
-  -f subscribed=true `
-  -f ignored=false `
-  --silent
+$putArgs = @(
+  "api",
+  "--method", "PUT",
+  "repos/$fullName/subscription",
+  "-H", "Accept: application/vnd.github+json",
+  "-H", "X-GitHub-Api-Version: 2022-11-28",
+  "-F", "subscribed=true",
+  "-F", "ignored=false"
+)
+
+$putOutput = & gh @putArgs 2>&1
 if ($LASTEXITCODE -ne 0) {
-  throw "Failed to set subscription for $fullName"
+  $details = ($putOutput | Out-String).Trim()
+  if ($details -match "Validation Failed") {
+    Write-Warning "[new-repo-watch] GitHub returned 422 Validation Failed for $fullName."
+    Write-Warning "[new-repo-watch] Ensure gh token is a classic PAT (not fine-grained) with repo scope."
+  }
+  throw "Failed to set subscription for $fullName :: $details"
 }
 
 # Verify

@@ -158,13 +158,24 @@ while (-not $stop -and $processed -lt $Limit) {
     }
 
     try {
-      gh api -X PUT "repos/$fullName/subscription" `
-        -H "Accept: application/vnd.github+json" `
-        -f subscribed=true `
-        -f ignored=false `
-        --silent
+      $putArgs = @(
+        "api",
+        "--method", "PUT",
+        "repos/$fullName/subscription",
+        "-H", "Accept: application/vnd.github+json",
+        "-H", "X-GitHub-Api-Version: 2022-11-28",
+        "-F", "subscribed=true",
+        "-F", "ignored=false"
+      )
+
+      $putOutput = & gh @putArgs 2>&1
       if ($LASTEXITCODE -ne 0) {
-        throw "gh api returned non-zero exit code."
+        $details = ($putOutput | Out-String).Trim()
+        if ($details -match "Validation Failed") {
+          Write-Warning "[watch-recent-repos] GitHub returned 422 Validation Failed for $fullName."
+          Write-Warning "[watch-recent-repos] Ensure WATCH_PAT is a classic PAT (not fine-grained) with repo scope."
+        }
+        throw "gh api returned non-zero exit code. $details"
       }
       $watched += 1
       Write-Host "[watch-recent-repos] watched $fullName"
