@@ -3,8 +3,9 @@
 This repository restores "auto watch new repositories" behavior with:
 
 1. A local `gh repo create` wrapper that immediately enables Watch.
-2. A GitHub Actions workflow that periodically backfills Watch for recently created repos.
+2. An auto GitHub Actions workflow that continuously backfills recent repos.
 3. A one-click script to watch your own repos after a cutoff date.
+4. A dedicated manual GitHub Action for one-click cutoff backfill (default `2025-04-14T00:00:00Z`).
 
 ## Why this exists
 
@@ -91,7 +92,25 @@ gh rnew my-org/my-new-repo --private --clone
 
 ## GitHub Actions mode
 
+### A) Auto mode (continuous sync)
+
 Workflow file: `.github/workflows/auto-watch-new-repos.yml`
+
+Triggers:
+
+- schedule: hourly
+- manual `workflow_dispatch`
+
+Default values:
+
+- `owner`: empty (uses authenticated user)
+- `owner_type`: `auto`
+- `since_days`: `3`
+- `limit`: `500`
+
+### B) Manual one-click cutoff mode
+
+Workflow file: `.github/workflows/manual-watch-since.yml`
 
 Triggers:
 
@@ -103,6 +122,7 @@ Default manual values:
 - `owner_type`: `user`
 - `since`: `2025-04-14T00:00:00Z`
 - `limit`: `1000`
+- `dry_run`: `false`
 
 Setup:
 

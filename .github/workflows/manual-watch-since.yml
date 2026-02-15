@@ -1,36 +1,39 @@
-name: Auto Watch New Repos
+name: Manual Watch Repos Since Cutoff
 
 on:
-  schedule:
-    - cron: "13 * * * *"
   workflow_dispatch:
     inputs:
       owner:
-        description: "GitHub login/org (default: authenticated user)"
+        description: "GitHub login (default: authenticated user)"
         required: false
         type: string
       owner_type:
         description: "Owner type"
         required: false
-        default: "auto"
+        default: "user"
         type: choice
         options:
-          - auto
           - user
           - org
-      since_days:
-        description: "Watch repos created in the last N days"
+          - auto
+      since:
+        description: "Watch repos created at/after this UTC timestamp"
         required: false
-        default: "3"
+        default: "2025-04-14T00:00:00Z"
         type: string
       limit:
         description: "Max repos to scan (1-10000)"
         required: false
-        default: "500"
+        default: "1000"
         type: string
+      dry_run:
+        description: "Only print targets, no write"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
-  auto-watch:
+  watch-since:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -48,7 +51,7 @@ jobs:
             exit 1
           fi
 
-      - name: Sync watch subscriptions
+      - name: Run one-click backfill from cutoff
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.WATCH_PAT }}
@@ -57,19 +60,22 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($owner)) { $owner = $null }
 
           $ownerType = "${{ github.event.inputs.owner_type }}"
-          if ([string]::IsNullOrWhiteSpace($ownerType)) { $ownerType = "auto" }
+          if ([string]::IsNullOrWhiteSpace($ownerType)) { $ownerType = "user" }
 
-          $sinceDaysRaw = "${{ github.event.inputs.since_days }}"
-          if ([string]::IsNullOrWhiteSpace($sinceDaysRaw)) { $sinceDaysRaw = "3" }
-          $sinceDays = [int]$sinceDaysRaw
+          $sinceRaw = "${{ github.event.inputs.since }}"
+          if ([string]::IsNullOrWhiteSpace($sinceRaw)) { $sinceRaw = "2025-04-14T00:00:00Z" }
+          $since = [DateTime]::Parse($sinceRaw).ToUniversalTime()
 
           $limitRaw = "${{ github.event.inputs.limit }}"
-          if ([string]::IsNullOrWhiteSpace($limitRaw)) { $limitRaw = "500" }
+          if ([string]::IsNullOrWhiteSpace($limitRaw)) { $limitRaw = "1000" }
           $limit = [int]$limitRaw
+
+          $dryRunRaw = "${{ github.event.inputs.dry_run }}"
+          $dryRun = $dryRunRaw -eq "true"
 
           $scriptArgs = @{
             OwnerType = $ownerType
-            SinceDays = $sinceDays
+            Since = $since
             Limit = $limit
           }
 
@@ -77,4 +83,9 @@ jobs:
             $scriptArgs.Owner = $owner
           }
 
+          if ($dryRun) {
+            $scriptArgs.DryRun = $true
+          }
+
           ./scripts/watch-recent-repos.ps1 @scriptArgs
+
