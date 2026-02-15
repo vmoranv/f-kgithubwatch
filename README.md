@@ -1,0 +1,101 @@
+# Auto Watch for Newly Created GitHub Repos
+
+This repository restores "auto watch new repositories" behavior with:
+
+1. A local `gh repo create` wrapper that immediately enables Watch.
+2. A GitHub Actions workflow that periodically backfills Watch for recently created repos.
+
+## Why this exists
+
+GitHub's built-in "Automatically watch repositories" setting is not always enough for modern workflows.
+This repo enforces Watch state via API:
+
+- `PUT /repos/{owner}/{repo}/subscription`
+
+## Prerequisites
+
+- `gh` CLI installed and authenticated.
+- PowerShell 7+ (`pwsh`) recommended.
+- For Actions mode: a classic PAT stored as `WATCH_PAT` repository secret.
+
+Important:
+
+- The repository subscription endpoint does **not** work with GitHub App tokens and fine-grained PATs.
+- In GitHub Actions, default `GITHUB_TOKEN` is a GitHub App token, so use `WATCH_PAT`.
+
+## Local mode: create and watch immediately
+
+```powershell
+pwsh -File .\scripts\new-repo-watch.ps1 my-org/my-new-repo --private --clone
+```
+
+Create in an organization (repo arg without owner):
+
+```powershell
+pwsh -File .\scripts\new-repo-watch.ps1 my-new-repo --org my-org --private --clone
+```
+
+Equivalent flow:
+
+1. Run `gh repo create ...`
+2. Resolve real repo owner/name
+3. Call subscription API to set `subscribed=true`, `ignored=false`
+4. Verify watch state
+
+## Local mode: backfill recent repos
+
+Watch repos created recently by a user or org:
+
+```powershell
+pwsh -File .\scripts\watch-recent-repos.ps1 -Owner my-org -OwnerType org -SinceDays 30 -Limit 100
+```
+
+Dry run:
+
+```powershell
+pwsh -File .\scripts\watch-recent-repos.ps1 -Owner my-org -OwnerType org -DryRun
+```
+
+## Optional template-like alias
+
+Make a reusable local command:
+
+```powershell
+gh alias set rnew "!pwsh -NoProfile -File $PWD/scripts/new-repo-watch.ps1"
+```
+
+Then:
+
+```powershell
+gh rnew my-org/my-new-repo --private --clone
+```
+
+## GitHub Actions mode
+
+Workflow file: `.github/workflows/auto-watch-new-repos.yml`
+
+Triggers:
+
+- schedule: every 6 hours
+- manual `workflow_dispatch`
+
+Setup:
+
+1. Create classic PAT.
+2. Add PAT to repository secret `WATCH_PAT`.
+3. Enable workflow.
+
+The workflow executes:
+
+```powershell
+./scripts/watch-recent-repos.ps1
+```
+
+with inputs for owner, owner type, window days, and scan limit.
+
+## References
+
+- GitHub REST API: Watching endpoints  
+  https://docs.github.com/en/rest/activity/watching
+- GitHub CLI: `gh repo create`  
+  https://cli.github.com/manual/gh_repo_create

@@ -1,0 +1,80 @@
+name: Auto Watch New Repos
+
+on:
+  schedule:
+    - cron: "13 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      owner:
+        description: "GitHub login/org (default: authenticated user)"
+        required: false
+        type: string
+      owner_type:
+        description: "Owner type"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - user
+          - org
+      since_days:
+        description: "Watch repos created in the last N days"
+        required: false
+        default: "30"
+        type: string
+      limit:
+        description: "Max repos to scan (1-100)"
+        required: false
+        default: "100"
+        type: string
+
+jobs:
+  auto-watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Require classic PAT
+        env:
+          WATCH_PAT: ${{ secrets.WATCH_PAT }}
+        run: |
+          if [ -z "${WATCH_PAT}" ]; then
+            echo "Missing WATCH_PAT secret."
+            echo "Use a classic PAT. Default GITHUB_TOKEN will not work for subscription endpoint."
+            exit 1
+          fi
+
+      - name: Sync watch subscriptions
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WATCH_PAT }}
+        run: |
+          $owner = "${{ github.event.inputs.owner }}"
+          if ([string]::IsNullOrWhiteSpace($owner)) { $owner = $null }
+
+          $ownerType = "${{ github.event.inputs.owner_type }}"
+          if ([string]::IsNullOrWhiteSpace($ownerType)) { $ownerType = "auto" }
+
+          $sinceDaysRaw = "${{ github.event.inputs.since_days }}"
+          if ([string]::IsNullOrWhiteSpace($sinceDaysRaw)) { $sinceDaysRaw = "30" }
+          $sinceDays = [int]$sinceDaysRaw
+
+          $limitRaw = "${{ github.event.inputs.limit }}"
+          if ([string]::IsNullOrWhiteSpace($limitRaw)) { $limitRaw = "100" }
+          $limit = [int]$limitRaw
+
+          $args = @(
+            "-OwnerType", $ownerType,
+            "-SinceDays", $sinceDays,
+            "-Limit", $limit
+          )
+
+          if ($owner) {
+            $args += @("-Owner", $owner)
+          }
+
+          ./scripts/watch-recent-repos.ps1 @args
