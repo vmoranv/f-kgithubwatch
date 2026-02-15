@@ -1,32 +1,30 @@
 name: Auto Watch New Repos
 
 on:
-  schedule:
-    - cron: "13 */6 * * *"
   workflow_dispatch:
     inputs:
       owner:
-        description: "GitHub login/org (default: authenticated user)"
+        description: "GitHub login (default: authenticated user)"
         required: false
         type: string
       owner_type:
         description: "Owner type"
         required: false
-        default: "auto"
+        default: "user"
         type: choice
         options:
           - auto
           - user
           - org
-      since_days:
-        description: "Watch repos created in the last N days"
+      since:
+        description: "Watch repos created at/after this UTC timestamp"
         required: false
-        default: "30"
+        default: "2025-04-14T00:00:00Z"
         type: string
       limit:
-        description: "Max repos to scan (1-100)"
+        description: "Max repos to scan (1-10000)"
         required: false
-        default: "100"
+        default: "1000"
         type: string
 
 jobs:
@@ -59,22 +57,22 @@ jobs:
           $ownerType = "${{ github.event.inputs.owner_type }}"
           if ([string]::IsNullOrWhiteSpace($ownerType)) { $ownerType = "auto" }
 
-          $sinceDaysRaw = "${{ github.event.inputs.since_days }}"
-          if ([string]::IsNullOrWhiteSpace($sinceDaysRaw)) { $sinceDaysRaw = "30" }
-          $sinceDays = [int]$sinceDaysRaw
+          $sinceRaw = "${{ github.event.inputs.since }}"
+          if ([string]::IsNullOrWhiteSpace($sinceRaw)) { $sinceRaw = "2025-04-14T00:00:00Z" }
+          $since = [DateTime]::Parse($sinceRaw).ToUniversalTime()
 
           $limitRaw = "${{ github.event.inputs.limit }}"
-          if ([string]::IsNullOrWhiteSpace($limitRaw)) { $limitRaw = "100" }
+          if ([string]::IsNullOrWhiteSpace($limitRaw)) { $limitRaw = "1000" }
           $limit = [int]$limitRaw
 
-          $args = @(
-            "-OwnerType", $ownerType,
-            "-SinceDays", $sinceDays,
-            "-Limit", $limit
-          )
-
-          if ($owner) {
-            $args += @("-Owner", $owner)
+          $scriptArgs = @{
+            OwnerType = $ownerType
+            Since = $since
+            Limit = $limit
           }
 
-          ./scripts/watch-recent-repos.ps1 @args
+          if ($owner) {
+            $scriptArgs.Owner = $owner
+          }
+
+          ./scripts/watch-recent-repos.ps1 @scriptArgs

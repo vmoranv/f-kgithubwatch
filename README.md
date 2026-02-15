@@ -4,6 +4,7 @@ This repository restores "auto watch new repositories" behavior with:
 
 1. A local `gh repo create` wrapper that immediately enables Watch.
 2. A GitHub Actions workflow that periodically backfills Watch for recently created repos.
+3. A one-click script to watch your own repos after a cutoff date.
 
 ## Why this exists
 
@@ -50,6 +51,24 @@ Watch repos created recently by a user or org:
 pwsh -File .\scripts\watch-recent-repos.ps1 -Owner my-org -OwnerType org -SinceDays 30 -Limit 100
 ```
 
+Watch repos created after a specific timestamp:
+
+```powershell
+pwsh -File .\scripts\watch-recent-repos.ps1 -Owner my-org -OwnerType org -Since "2026-02-01T00:00:00Z" -Limit 1000
+```
+
+One-click for your own repos (default: after `2025-04-14T00:00:00Z`):
+
+```powershell
+pwsh -File .\scripts\watch-my-repos-since.ps1
+```
+
+Override cutoff:
+
+```powershell
+pwsh -File .\scripts\watch-my-repos-since.ps1 -Since "2025-08-01T00:00:00Z" -Limit 2000
+```
+
 Dry run:
 
 ```powershell
@@ -76,8 +95,14 @@ Workflow file: `.github/workflows/auto-watch-new-repos.yml`
 
 Triggers:
 
-- schedule: every 6 hours
 - manual `workflow_dispatch`
+
+Default manual values:
+
+- `owner`: empty (uses authenticated user)
+- `owner_type`: `user`
+- `since`: `2025-04-14T00:00:00Z`
+- `limit`: `1000`
 
 Setup:
 
@@ -91,7 +116,7 @@ The workflow executes:
 ./scripts/watch-recent-repos.ps1
 ```
 
-with inputs for owner, owner type, window days, and scan limit.
+with inputs for owner, owner type, cutoff timestamp, and scan limit.
 
 ## References
 

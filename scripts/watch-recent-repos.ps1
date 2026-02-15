@@ -18,27 +18,34 @@ GitHub login/organization name. If omitted, current authenticated user is used.
 .PARAMETER OwnerType
 auto|user|org
 
+.PARAMETER Since
+Only process repos created at/after this timestamp (converted to UTC).
+
 .PARAMETER SinceDays
 Only process repos created within the last N days.
 
 .PARAMETER Limit
-Max repositories to inspect (1..100).
+Max repositories to inspect (1..10000).
 
 .PARAMETER DryRun
 Only print targets, do not call write API.
 #>
 
-[CmdletBinding(PositionalBinding = $false)]
+[CmdletBinding(DefaultParameterSetName = "Days", PositionalBinding = $false)]
 param(
   [string] $Owner,
 
   [ValidateSet("auto", "user", "org")]
   [string] $OwnerType = "auto",
 
+  [Parameter(ParameterSetName = "Since", Mandatory = $true)]
+  [DateTime] $Since,
+
+  [Parameter(ParameterSetName = "Days")]
   [ValidateRange(1, 3650)]
   [int] $SinceDays = 30,
 
-  [ValidateRange(1, 100)]
+  [ValidateRange(1, 10000)]
   [int] $Limit = 100,
 
   [switch] $DryRun,
@@ -80,72 +87,102 @@ if ($OwnerType -eq "auto") {
   }
 }
 
-$endpoint = if ($OwnerType -eq "org") {
-  "orgs/$Owner/repos?sort=created&direction=desc&per_page=$Limit&type=all"
+$baseEndpoint = if ($OwnerType -eq "org") {
+  "orgs/$Owner/repos?sort=created&direction=desc&type=all"
 } else {
-  "users/$Owner/repos?sort=created&direction=desc&per_page=$Limit&type=owner"
+  "users/$Owner/repos?sort=created&direction=desc&type=owner"
 }
 
-Write-Host "[watch-recent-repos] owner=$Owner ownerType=$OwnerType sinceDays=$SinceDays limit=$Limit dryRun=$DryRun"
-Write-Host "[watch-recent-repos] listing: $endpoint"
-
-$reposJson = gh api $endpoint
-if ($LASTEXITCODE -ne 0) {
-  throw "Failed listing repositories from endpoint: $endpoint"
-}
-$repos = $reposJson | ConvertFrom-Json
-
-if (-not $repos) {
-  Write-Host "[watch-recent-repos] no repositories found."
-  exit 0
+$cutoff = if ($PSCmdlet.ParameterSetName -eq "Since") {
+  $Since.ToUniversalTime()
+} else {
+  (Get-Date).ToUniversalTime().AddDays(-$SinceDays)
 }
 
-$cutoff = (Get-Date).ToUniversalTime().AddDays(-$SinceDays)
+$perPage = [Math]::Min(100, $Limit)
+
+Write-Host "[watch-recent-repos] owner=$Owner ownerType=$OwnerType cutoff=$($cutoff.ToString('o')) limit=$Limit perPage=$perPage dryRun=$DryRun"
+Write-Host "[watch-recent-repos] listing: $baseEndpoint"
+
+$page = 1
 $processed = 0
 $watched = 0
 $skipped = 0
 $failed = 0
 
-foreach ($repo in $repos) {
-  $processed += 1
+$stop = $false
 
-  if (-not $IncludeArchived -and $repo.archived) {
-    $skipped += 1
-    continue
+while (-not $stop -and $processed -lt $Limit) {
+  $pageEndpoint = "$baseEndpoint&per_page=$perPage&page=$page"
+  Write-Host "[watch-recent-repos] fetching page=$page"
+
+  $reposJson = gh api $pageEndpoint
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed listing repositories from endpoint: $pageEndpoint"
   }
 
-  $createdAt = [DateTime]::Parse($repo.created_at).ToUniversalTime()
-  if ($createdAt -lt $cutoff) {
-    # Repos are sorted desc by created date, so we can stop early.
+  $repos = $reposJson | ConvertFrom-Json
+  if (-not $repos) {
     break
   }
 
-  $fullName = [string]$repo.full_name
-  if (-not $fullName) {
-    $skipped += 1
-    continue
-  }
-
-  if ($DryRun) {
-    Write-Host "[watch-recent-repos] DRY-RUN watch => $fullName"
-    continue
-  }
-
-  try {
-    gh api -X PUT "repos/$fullName/subscription" `
-      -H "Accept: application/vnd.github+json" `
-      -f subscribed=true `
-      -f ignored=false `
-      --silent
-    if ($LASTEXITCODE -ne 0) {
-      throw "gh api returned non-zero exit code."
+  foreach ($repo in $repos) {
+    if ($processed -ge $Limit) {
+      $stop = $true
+      break
     }
-    $watched += 1
-    Write-Host "[watch-recent-repos] watched $fullName"
-  } catch {
-    $failed += 1
-    Write-Warning "[watch-recent-repos] failed $fullName :: $($_.Exception.Message)"
+
+    $processed += 1
+
+    if (-not $IncludeArchived -and $repo.archived) {
+      $skipped += 1
+      continue
+    }
+
+    $createdAt = [DateTime]::Parse($repo.created_at).ToUniversalTime()
+    if ($createdAt -lt $cutoff) {
+      # Repos are sorted desc by created date, so we can stop early.
+      $stop = $true
+      break
+    }
+
+    $fullName = [string]$repo.full_name
+    if (-not $fullName) {
+      $skipped += 1
+      continue
+    }
+
+    if ($DryRun) {
+      Write-Host "[watch-recent-repos] DRY-RUN watch => $fullName"
+      continue
+    }
+
+    try {
+      gh api -X PUT "repos/$fullName/subscription" `
+        -H "Accept: application/vnd.github+json" `
+        -f subscribed=true `
+        -f ignored=false `
+        --silent
+      if ($LASTEXITCODE -ne 0) {
+        throw "gh api returned non-zero exit code."
+      }
+      $watched += 1
+      Write-Host "[watch-recent-repos] watched $fullName"
+    } catch {
+      $failed += 1
+      Write-Warning "[watch-recent-repos] failed $fullName :: $($_.Exception.Message)"
+    }
   }
+
+  if ($stop) {
+    break
+  }
+
+  if ($repos.Count -lt $perPage) {
+    break
+  }
+
+  $page += 1
 }
 
 Write-Host "[watch-recent-repos] summary processed=$processed watched=$watched skipped=$skipped failed=$failed cutoff=$($cutoff.ToString('o'))"
